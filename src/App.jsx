@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-// ── Palette ──────────────────────────────────────────────
+const MOT_DE_PASSE = "Grisou";
+
 const C = {
   bg: "#FDF5F0", card: "#FFFFFF", primary: "#C97B8A", primaryDark: "#A85F6E",
   primaryLight: "#F7E0E5", nude: "#E8C9B0", nudeDark: "#C4956A", nudeLight: "#FAF0E8",
@@ -11,7 +12,6 @@ const C = {
 const shadow = "0 2px 14px rgba(180,100,120,0.08)";
 const fullBtn = { background: C.primary, color: "white", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, cursor: "pointer", width: "100%", fontFamily: "Georgia", marginTop: 8 };
 
-// ── Grille tarifaire ongles ───────────────────────────────
 const PRESTATIONS = [
   { id: "semi", label: "Vernis semi-permanent", prix: { unique: 35 } },
   { id: "depose", label: "Dépose (sans repose)", prix: { unique: 20 } },
@@ -21,9 +21,7 @@ const PRESTATIONS = [
   { id: "remplissage", label: "Remplissage", prix: { S: 40, M: 45, L: 50 } },
 ];
 const SERVICES_CILS = ["Volume russe", "Cils à cils", "Mega volume", "Retouche", "Dépose cils", "Lifting cils", "Teinture cils"];
-
 const hasTaille = (id) => ["renforcement", "rallongement", "remplissage"].includes(id);
-
 const getPrix = (prestId, taille) => {
   const p = PRESTATIONS.find(p => p.id === prestId);
   if (!p) return 0;
@@ -31,57 +29,86 @@ const getPrix = (prestId, taille) => {
   return taille ? (p.prix[taille] || 0) : 0;
 };
 
-// ── Données initiales ─────────────────────────────────────
-const initialClients = [
-  { id: 1, nom: "Martin", prenom: "Sophie", telephone: "06 12 34 56 78", allergies: "Latex", notes: "Préfère les tons nude", fidelite: 2 },
-  { id: 2, nom: "Dupont", prenom: "Camille", telephone: "07 98 76 54 32", allergies: "", notes: "Aime le nail art créatif", fidelite: 8 },
-  { id: 3, nom: "Bernard", prenom: "Léa", telephone: "06 55 44 33 22", allergies: "Nickel", notes: "", fidelite: 10 },
-];
-
-const initialRdvs = [
-  { id: 1, clientId: 1, categorie: "ongles", prestId: "remplissage", taille: "M", date: "2026-06-10", heure: "10:00", statut: "termine", prixBase: 45, nailArt: true, prixNailArt: 8, prixOffre: 0, labelOffre: "", produits: "Gel Luxio nude", remarques: "RAS", pointAdded: true },
-  { id: 2, clientId: 2, categorie: "ongles", prestId: "rallongement", taille: "L", date: "2026-06-12", heure: "14:00", statut: "aVenir", prixBase: 60, nailArt: false, prixNailArt: 0, prixOffre: 0, labelOffre: "", produits: "", remarques: "", pointAdded: false },
-  { id: 3, clientId: 3, categorie: "ongles", prestId: "semi", taille: "", date: "2026-06-15", heure: "11:00", statut: "aVenir", prixBase: 35, nailArt: false, prixNailArt: 0, prixOffre: 0, labelOffre: "", produits: "", remarques: "", pointAdded: false },
-];
-
-const initialOffres = [
+const CLIENTS_DEFAUT = [];
+const RDVS_DEFAUT = [];
+const OFFRES_DEFAUT = [
   { id: 1, label: "Offre Noël ❄️", remise: 10 },
   { id: 2, label: "Parrainage 🌸", remise: 5 },
 ];
 
+function useLocalStorage(key, defaultValue) {
+  const [value, setValue] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : defaultValue;
+    } catch { return defaultValue; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }, [key, value]);
+  return [value, setValue];
+}
+
 export default function App() {
+  const [connecte, setConnecte] = useLocalStorage("glam_connecte", false);
+  const [mdp, setMdp] = useState("");
+  const [erreurMdp, setErreurMdp] = useState(false);
+
   const [page, setPage] = useState("accueil");
-  const [clients, setClients] = useState(initialClients);
-  const [rdvs, setRdvs] = useState(initialRdvs);
-  const [offres, setOffres] = useState(initialOffres);
+  const [clients, setClients] = useLocalStorage("glam_clients", CLIENTS_DEFAUT);
+  const [rdvs, setRdvs] = useLocalStorage("glam_rdvs", RDVS_DEFAUT);
+  const [offres, setOffres] = useLocalStorage("glam_offres", OFFRES_DEFAUT);
   const [selectedClient, setSelectedClient] = useState(null);
   const [showAddClient, setShowAddClient] = useState(false);
   const [showAddRdv, setShowAddRdv] = useState(false);
   const [showAddOffre, setShowAddOffre] = useState(false);
-  const [cloturerRdv, setCloturerRdv] = useState(null); // RDV en cours de clôture
+  const [showConfirmDelete, setShowConfirmDelete] = useState(null);
+  const [cloturerRdv, setCloturerRdv] = useState(null);
   const [search, setSearch] = useState("");
-  const [agendaDate, setAgendaDate] = useState("2026-06-10");
+  const [agendaDate, setAgendaDate] = useState(new Date().toISOString().slice(0, 10));
   const [toast, setToast] = useState(null);
-
-  // Formulaire nouveau RDV
-  const [newRdv, setNewRdv] = useState({ clientId: "", categorie: "ongles", prestId: "", taille: "", date: "", heure: "" });
-  // Formulaire clôture
-  const [cloture, setCloture] = useState({ nailArt: false, prixNailArt: "", prixOffre: "", offreId: "", produits: "", remarques: "" });
-  // Formulaire nouvelle cliente
   const [newClient, setNewClient] = useState({ nom: "", prenom: "", telephone: "", allergies: "", notes: "" });
-  // Formulaire nouvelle offre
+  const [newRdv, setNewRdv] = useState({ clientId: "", categorie: "ongles", prestId: "", taille: "", date: "", heure: "" });
+  const [cloture, setCloture] = useState({ nailArt: false, prixNailArt: "", offreId: "", produits: "", remarques: "" });
   const [newOffre, setNewOffre] = useState({ label: "", remise: "" });
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
+
+  const seConnecter = () => {
+    if (mdp === MOT_DE_PASSE) { setConnecte(true); setErreurMdp(false); }
+    else { setErreurMdp(true); }
+  };
+
+  // ── Écran mot de passe ───────────────────────────────────
+  if (!connecte) {
+    return (
+      <div style={{ fontFamily: "Georgia", background: `linear-gradient(135deg, ${C.primaryDark}, ${C.primary})`, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ background: "white", borderRadius: 24, padding: 32, width: "100%", maxWidth: 380, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,0.15)" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🌸</div>
+          <div style={{ fontSize: 22, fontWeight: "bold", color: C.text, marginBottom: 4 }}>Glam by Jess</div>
+          <div style={{ fontSize: 13, color: C.textLight, marginBottom: 28 }}>L'élégance jusqu'au bout des ongles</div>
+          <input
+            type="password"
+            placeholder="Mot de passe"
+            value={mdp}
+            onChange={e => { setMdp(e.target.value); setErreurMdp(false); }}
+            onKeyDown={e => e.key === "Enter" && seConnecter()}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: `2px solid ${erreurMdp ? "#E07070" : C.border}`, fontSize: 15, outline: "none", boxSizing: "border-box", fontFamily: "Georgia", textAlign: "center", marginBottom: 8 }}
+          />
+          {erreurMdp && <div style={{ fontSize: 13, color: "#E07070", marginBottom: 8 }}>Mot de passe incorrect ❌</div>}
+          <button onClick={seConnecter} style={{ ...fullBtn, marginTop: 8 }}>Entrer</button>
+        </div>
+      </div>
+    );
+  }
 
   const sortedClients = [...clients].sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
   const filteredClients = sortedClients.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(search.toLowerCase()) || c.telephone.includes(search)
   );
-
   const rdvsJour = rdvs.filter(r => r.date === agendaDate).sort((a, b) => a.heure.localeCompare(b.heure));
-  const rdvsAVenir = rdvs.filter(r => r.statut === "aVenir" && r.date >= new Date().toISOString().slice(0, 10)).sort((a, b) => r => a.date.localeCompare(b.date));
-  const totalMois = rdvs.filter(r => r.statut === "termine" && r.date.startsWith("2026-06")).reduce((sum, r) => sum + prixTotal(r), 0);
+  const moisCourant = new Date().toISOString().slice(0, 7);
+  const totalMois = rdvs.filter(r => r.statut === "termine" && r.date.startsWith(moisCourant)).reduce((sum, r) => sum + prixTotal(r), 0);
 
   function prixTotal(r) {
     return (r.prixBase || 0) + (r.prixNailArt || 0) - (r.prixOffre || 0);
@@ -102,7 +129,23 @@ export default function App() {
   const historiqueCliente = (clientId) =>
     rdvs.filter(r => r.clientId === clientId && r.statut === "termine").sort((a, b) => b.date.localeCompare(a.date));
 
-  // Ajouter RDV (étape 1)
+  const addClient = () => {
+    if (!newClient.nom || !newClient.prenom) return showToast("Nom et prénom requis !");
+    setClients([...clients, { ...newClient, id: Date.now(), fidelite: 0 }]);
+    setNewClient({ nom: "", prenom: "", telephone: "", allergies: "", notes: "" });
+    setShowAddClient(false);
+    showToast("Cliente ajoutée 🌸");
+  };
+
+  const deleteClient = (clientId) => {
+    setClients(clients.filter(c => c.id !== clientId));
+    setRdvs(rdvs.filter(r => r.clientId !== clientId));
+    setShowConfirmDelete(null);
+    setPage("clientes");
+    setSelectedClient(null);
+    showToast("Cliente supprimée");
+  };
+
   const addRdv = () => {
     if (!newRdv.clientId || !newRdv.prestId || !newRdv.date || !newRdv.heure) return showToast("Remplis tous les champs obligatoires !");
     if (hasTaille(newRdv.prestId) && !newRdv.taille) return showToast("Choisis une taille S, M ou L !");
@@ -113,27 +156,20 @@ export default function App() {
     showToast("RDV enregistré 📅");
   };
 
-  // Ouvrir clôture
   const ouvrirCloture = (rdv) => {
     setCloturerRdv(rdv);
-    setCloture({ nailArt: rdv.nailArt, prixNailArt: rdv.prixNailArt || "", prixOffre: rdv.prixOffre || "", offreId: rdv.offreId || "", produits: rdv.produits || "", remarques: rdv.remarques || "" });
+    setCloture({ nailArt: rdv.nailArt || false, prixNailArt: rdv.prixNailArt || "", offreId: rdv.offreId || "", produits: rdv.produits || "", remarques: rdv.remarques || "" });
   };
 
-  // Valider clôture (étape 2)
   const validerCloture = () => {
     const offre = offres.find(o => o.id === parseInt(cloture.offreId));
-    const prixOffre = offre ? offre.remise : (parseFloat(cloture.prixOffre) || 0);
+    const prixOffre = offre ? offre.remise : 0;
     const labelOffre = offre ? offre.label : "";
-    const updated = rdvs.map(r => r.id === cloturerRdv.id ? {
-      ...r, statut: "termine",
-      nailArt: cloture.nailArt,
+    setRdvs(rdvs.map(r => r.id === cloturerRdv.id ? {
+      ...r, statut: "termine", nailArt: cloture.nailArt,
       prixNailArt: parseFloat(cloture.prixNailArt) || 0,
-      prixOffre, labelOffre,
-      produits: cloture.produits,
-      remarques: cloture.remarques,
-      pointAdded: true,
-    } : r);
-    setRdvs(updated);
+      prixOffre, labelOffre, produits: cloture.produits, remarques: cloture.remarques, pointAdded: true,
+    } : r));
     if (!cloturerRdv.pointAdded) {
       setClients(clients.map(c => c.id === cloturerRdv.clientId ? { ...c, fidelite: c.fidelite + 1 } : c));
     }
@@ -146,14 +182,6 @@ export default function App() {
     setRdvs(rdvs.filter(r => r.id !== id));
     if (rdv.pointAdded) setClients(clients.map(c => c.id === rdv.clientId ? { ...c, fidelite: Math.max(0, c.fidelite - 1) } : c));
     showToast("RDV supprimé");
-  };
-
-  const addClient = () => {
-    if (!newClient.nom || !newClient.prenom) return showToast("Nom et prénom requis !");
-    setClients([...clients, { ...newClient, id: Date.now(), fidelite: 0 }]);
-    setNewClient({ nom: "", prenom: "", telephone: "", allergies: "", notes: "" });
-    setShowAddClient(false);
-    showToast("Cliente ajoutée 🌸");
   };
 
   const addOffre = () => {
@@ -174,19 +202,22 @@ export default function App() {
     { id: "fidelite", icon: "⭐", label: "Fidélité" },
   ];
 
-  // ── Rendu ─────────────────────────────────────────────────
   return (
     <div style={{ fontFamily: "'Georgia', serif", background: C.bg, minHeight: "100vh", maxWidth: 430, margin: "0 auto", position: "relative", paddingBottom: 84 }}>
 
-      {/* Header */}
       <div style={{ background: `linear-gradient(135deg, ${C.primaryDark}, ${C.primary})`, padding: "22px 20px 16px", color: "white", position: "sticky", top: 0, zIndex: 10, boxShadow: "0 2px 12px rgba(180,80,100,0.18)" }}>
-        <div style={{ fontSize: 10, letterSpacing: 3, textTransform: "uppercase", opacity: 0.75, marginBottom: 3 }}>Glam by Jess</div>
-        <div style={{ fontSize: 21, fontWeight: "bold" }}>
-          {page === "accueil" && "✨ Tableau de bord"}
-          {page === "agenda" && "📅 Mon Agenda"}
-          {page === "clientes" && "👤 Mes Clientes"}
-          {page === "fidelite" && "⭐ Fidélité"}
-          {page === "fiche" && selectedClient && `${selectedClient.prenom} ${selectedClient.nom}`}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 3, textTransform: "uppercase", opacity: 0.75, marginBottom: 3 }}>Glam by Jess</div>
+            <div style={{ fontSize: 21, fontWeight: "bold" }}>
+              {page === "accueil" && "✨ Tableau de bord"}
+              {page === "agenda" && "📅 Mon Agenda"}
+              {page === "clientes" && "👤 Mes Clientes"}
+              {page === "fidelite" && "⭐ Fidélité"}
+              {page === "fiche" && selectedClient && `${selectedClient.prenom} ${selectedClient.nom}`}
+            </div>
+          </div>
+          <button onClick={() => setConnecte(false)} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", borderRadius: 10, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontFamily: "Georgia" }}>🔒 Quitter</button>
         </div>
       </div>
 
@@ -203,17 +234,15 @@ export default function App() {
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
               <StatCard label="Clientes" value={clients.length} icon="👥" bg={C.primaryLight} />
-              <StatCard label="RDV ce mois" value={rdvs.filter(r => r.date.startsWith("2026-06")).length} icon="📆" bg={C.nudeLight} />
+              <StatCard label="RDV ce mois" value={rdvs.filter(r => r.date.startsWith(moisCourant)).length} icon="📆" bg={C.nudeLight} />
               <StatCard label="CA du mois" value={`${totalMois}€`} icon="💰" bg={C.greenBg} />
               <StatCard label="RDV à venir" value={rdvs.filter(r => r.statut === "aVenir").length} icon="🌸" bg={C.warn} />
             </div>
-
             <SectionTitle>Prochains rendez-vous</SectionTitle>
             {rdvs.filter(r => r.statut === "aVenir").sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3).map(r => (
               <MiniRdv key={r.id} rdv={r} nom={clientName(r.clientId)} label={labelPrestation(r)} />
             ))}
             {rdvs.filter(r => r.statut === "aVenir").length === 0 && <Empty>Aucun RDV à venir 🌸</Empty>}
-
             <SectionTitle style={{ marginTop: 18 }}>Accès rapide</SectionTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <QuickBtn icon="➕" label="Nouvelle cliente" onClick={() => { setPage("clientes"); setShowAddClient(true); }} />
@@ -230,18 +259,16 @@ export default function App() {
               <input type="date" value={agendaDate} onChange={e => setAgendaDate(e.target.value)}
                 style={{ width: "100%", border: "none", fontSize: 17, fontFamily: "Georgia", color: C.text, background: "transparent", outline: "none" }} />
             </div>
-
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontSize: 13, color: C.textMid }}>{rdvsJour.length} rendez-vous ce jour</div>
               <Btn onClick={() => setShowAddRdv(true)}>+ Ajouter</Btn>
             </div>
-
             {rdvsJour.length === 0 && <Empty>Aucun RDV ce jour 🌸</Empty>}
             {rdvsJour.map(r => (
               <div key={r.id} style={{ background: C.card, borderRadius: 14, padding: 16, marginBottom: 10, boxShadow: shadow, borderLeft: `4px solid ${r.statut === "termine" ? C.green : C.primary}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <div style={{ fontWeight: "bold", fontSize: 15, color: C.text }}>{r.heure} — {clientName(r.clientId)}</div>
                       <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: r.statut === "termine" ? C.greenBg : C.primaryLight, color: r.statut === "termine" ? C.greenText : C.primaryDark, fontWeight: "bold" }}>
                         {r.statut === "termine" ? "✅ Terminé" : "🕐 À venir"}
@@ -272,7 +299,6 @@ export default function App() {
               </div>
             ))}
 
-            {/* Modal Nouveau RDV */}
             {showAddRdv && (
               <Modal title="Nouveau rendez-vous" onClose={() => setShowAddRdv(false)}>
                 <Sel label="Cliente *" value={newRdv.clientId} onChange={v => setNewRdv({ ...newRdv, clientId: v })}>
@@ -298,16 +324,13 @@ export default function App() {
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 11, color: C.textLight, display: "block", marginBottom: 6, letterSpacing: 1 }}>TAILLE *</label>
                     <div style={{ display: "flex", gap: 10 }}>
-                      {["S", "M", "L"].map(t => {
-                        const px = getPrix(newRdv.prestId, t);
-                        return (
-                          <button key={t} onClick={() => setNewRdv({ ...newRdv, taille: t })}
-                            style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: `2px solid ${newRdv.taille === t ? C.primary : C.border}`, background: newRdv.taille === t ? C.primaryLight : "white", cursor: "pointer", fontFamily: "Georgia", color: C.text }}>
-                            <div style={{ fontWeight: "bold" }}>{t}</div>
-                            <div style={{ fontSize: 12, color: C.textMid }}>{px}€</div>
-                          </button>
-                        );
-                      })}
+                      {["S", "M", "L"].map(t => (
+                        <button key={t} onClick={() => setNewRdv({ ...newRdv, taille: t })}
+                          style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: `2px solid ${newRdv.taille === t ? C.primary : C.border}`, background: newRdv.taille === t ? C.primaryLight : "white", cursor: "pointer", fontFamily: "Georgia", color: C.text }}>
+                          <div style={{ fontWeight: "bold" }}>{t}</div>
+                          <div style={{ fontSize: 12, color: C.textMid }}>{getPrix(newRdv.prestId, t)}€</div>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -315,22 +338,19 @@ export default function App() {
                 <Fld label="Heure *" type="time" value={newRdv.heure} onChange={v => setNewRdv({ ...newRdv, heure: v })} />
                 {newRdv.prestId && (
                   <div style={{ background: C.nudeLight, borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: C.nudeDark }}>
-                    💰 Prix estimé : <strong>{getPrix(newRdv.prestId, newRdv.taille)}€</strong> — tu pourras compléter après la prestation
+                    💰 Prix estimé : <strong>{getPrix(newRdv.prestId, newRdv.taille)}€</strong>
                   </div>
                 )}
                 <button onClick={addRdv} style={fullBtn}>Enregistrer le RDV</button>
               </Modal>
             )}
 
-            {/* Modal Clôture */}
             {cloturerRdv && (
               <Modal title="Clôturer la prestation" onClose={() => setCloturerRdv(null)}>
                 <div style={{ background: C.primaryLight, borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.primaryDark }}>
                   🌸 <strong>{clientName(cloturerRdv.clientId)}</strong> — {labelPrestation(cloturerRdv)}<br />
                   Prix de base : <strong>{cloturerRdv.prixBase}€</strong>
                 </div>
-
-                {/* Nail art */}
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 11, color: C.textLight, display: "block", marginBottom: 6, letterSpacing: 1 }}>NAIL ART EN SUPPLÉMENT ?</label>
                   <div style={{ display: "flex", gap: 10 }}>
@@ -340,20 +360,13 @@ export default function App() {
                       style={{ flex: 1, padding: 10, borderRadius: 10, border: `2px solid ${cloture.nailArt ? C.primary : C.border}`, background: cloture.nailArt ? C.primaryLight : "white", cursor: "pointer", fontFamily: "Georgia", fontSize: 13 }}>Oui 💅</button>
                   </div>
                 </div>
-                {cloture.nailArt && (
-                  <Fld label="Prix nail art (€)" type="number" value={cloture.prixNailArt} onChange={v => setCloture({ ...cloture, prixNailArt: v })} placeholder="Ex: 8" />
-                )}
-
-                {/* Offre spéciale */}
+                {cloture.nailArt && <Fld label="Prix nail art (€)" type="number" value={cloture.prixNailArt} onChange={v => setCloture({ ...cloture, prixNailArt: v })} placeholder="Ex: 8" />}
                 <Sel label="Offre spéciale" value={cloture.offreId} onChange={v => setCloture({ ...cloture, offreId: v })}>
                   <option value="">Aucune offre</option>
                   {offres.map(o => <option key={o.id} value={o.id}>{o.label} (−{o.remise}€)</option>)}
                 </Sel>
-
-                <Fld label="Produits utilisés" value={cloture.produits} onChange={v => setCloture({ ...cloture, produits: v })} placeholder="Ex: Gel Luxio rose nude, top coat..." />
-                <Fld label="Remarques / Réactions" value={cloture.remarques} onChange={v => setCloture({ ...cloture, remarques: v })} placeholder="Ex: cliente satisfaite, légère rougeur..." />
-
-                {/* Total */}
+                <Fld label="Produits utilisés" value={cloture.produits} onChange={v => setCloture({ ...cloture, produits: v })} placeholder="Ex: Gel Luxio rose nude..." />
+                <Fld label="Remarques / Réactions" value={cloture.remarques} onChange={v => setCloture({ ...cloture, remarques: v })} placeholder="Ex: cliente satisfaite..." />
                 <div style={{ background: C.nudeLight, borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", color: C.textMid }}><span>Prestation</span><span>{cloturerRdv.prixBase}€</span></div>
                   {cloture.nailArt && cloture.prixNailArt && <div style={{ display: "flex", justifyContent: "space-between", color: C.nudeDark }}><span>Nail art</span><span>+{cloture.prixNailArt}€</span></div>}
@@ -378,6 +391,7 @@ export default function App() {
               <div style={{ fontSize: 13, color: C.textMid }}>{filteredClients.length} clientes</div>
               <Btn onClick={() => setShowAddClient(true)}>+ Ajouter</Btn>
             </div>
+            {filteredClients.length === 0 && <Empty>Aucune cliente pour l'instant 🌸<br/>Appuie sur "+ Ajouter" pour commencer !</Empty>}
             {filteredClients.map(c => (
               <div key={c.id} onClick={() => { setSelectedClient(c); setPage("fiche"); }}
                 style={{ background: C.card, borderRadius: 14, padding: 16, marginBottom: 9, boxShadow: shadow, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
@@ -433,7 +447,7 @@ export default function App() {
                   <div style={{ fontSize: 14, color: C.text, marginTop: 4 }}>{selectedClient.notes}</div>
                 </div>
               )}
-              <div style={{ background: C.card, borderRadius: 12, padding: 16, boxShadow: shadow }}>
+              <div style={{ background: C.card, borderRadius: 12, padding: 16, boxShadow: shadow, marginBottom: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: "bold", color: C.textLight, letterSpacing: 1, marginBottom: 12 }}>📋 HISTORIQUE DES PRESTATIONS</div>
                 {histo.length === 0 && <div style={{ color: C.textLight, fontSize: 13 }}>Aucune prestation terminée</div>}
                 {histo.map((r, i) => (
@@ -452,6 +466,11 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              {/* Bouton supprimer cliente */}
+              <button onClick={() => setShowConfirmDelete(selectedClient.id)}
+                style={{ width: "100%", padding: 14, borderRadius: 12, border: "1px solid #E07070", background: "white", color: "#E07070", fontSize: 14, cursor: "pointer", fontFamily: "Georgia" }}>
+                🗑️ Supprimer cette cliente
+              </button>
             </div>
           );
         })()}
@@ -465,7 +484,6 @@ export default function App() {
               <div style={{ fontSize: 13, opacity: 0.85, marginTop: 6 }}>10 points = 1 récompense à définir avec ta cliente</div>
               <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>1 prestation terminée = 1 point automatique</div>
             </div>
-
             <SectionTitle>Offres spéciales</SectionTitle>
             {offres.map(o => (
               <div key={o.id} style={{ background: C.card, borderRadius: 12, padding: "12px 16px", marginBottom: 8, boxShadow: shadow, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -474,8 +492,8 @@ export default function App() {
               </div>
             ))}
             <button onClick={() => setShowAddOffre(true)} style={{ ...fullBtn, background: "white", color: C.primary, border: `1px solid ${C.primary}`, marginBottom: 20 }}>+ Ajouter une offre</button>
-
             <SectionTitle>Mes clientes</SectionTitle>
+            {clients.length === 0 && <Empty>Aucune cliente pour l'instant 🌸</Empty>}
             {[...clients].sort((a, b) => b.fidelite - a.fidelite).map(c => (
               <div key={c.id} style={{ background: C.card, borderRadius: 14, padding: 16, marginBottom: 10, boxShadow: shadow }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -497,7 +515,6 @@ export default function App() {
                 {c.fidelite >= 10 && <div style={{ fontSize: 12, color: C.greenText, marginTop: 8, fontWeight: "bold", background: C.greenBg, padding: "6px 10px", borderRadius: 8 }}>🎉 Récompense disponible ! À définir avec {c.prenom}</div>}
               </div>
             ))}
-
             {showAddOffre && (
               <Modal title="Nouvelle offre spéciale" onClose={() => setShowAddOffre(false)}>
                 <Fld label="Nom de l'offre" value={newOffre.label} onChange={v => setNewOffre({ ...newOffre, label: v })} placeholder="Ex: Offre Noël ❄️" />
@@ -509,7 +526,21 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom Nav */}
+      {/* Confirmation suppression cliente */}
+      {showConfirmDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(60,20,30,0.5)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "white", borderRadius: 20, padding: 28, width: "100%", maxWidth: 340, textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+            <div style={{ fontSize: 16, fontWeight: "bold", color: C.text, marginBottom: 8 }}>Supprimer cette cliente ?</div>
+            <div style={{ fontSize: 13, color: C.textMid, marginBottom: 24 }}>Tous ses rendez-vous et son historique seront supprimés définitivement.</div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button onClick={() => setShowConfirmDelete(null)} style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${C.border}`, background: "white", fontSize: 14, cursor: "pointer", fontFamily: "Georgia" }}>Annuler</button>
+              <button onClick={() => deleteClient(showConfirmDelete)} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", background: "#E07070", color: "white", fontSize: 14, cursor: "pointer", fontFamily: "Georgia" }}>Supprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {page !== "fiche" && (
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "white", borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 20, boxShadow: "0 -2px 12px rgba(180,80,100,0.07)" }}>
           {nav.map(n => (
